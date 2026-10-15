@@ -1,2 +1,7 @@
-# wechat-minigames-prototypes
-Quick HTML5 prototypes of WeChat mini-game ideas for testing
+# WeChat Mini-Game Prototypes
+
+Playable HTML5 demos:
+
+- https://linjinyuan0418.github.io/wechat-minigames-prototypes/
+
+Or direct links after enabling Pages.
