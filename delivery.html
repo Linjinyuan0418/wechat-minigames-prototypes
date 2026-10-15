@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>送外卖 · 原型</title>
+<style>
+body {
+  margin: 0;
+  background: linear-gradient(160deg, #e0f7fa 0%, #b2ebf2 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #333;
+  min-height: 100vh;
+}
+canvas {
+  border-radius: 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+  background: #fff;
+  margin-top: 8px;
+  touch-action: none;
+}
+.ui { margin: 12px; text-align: center; }
+h2 { margin: 0 0 4px; color: #ff6b35; font-weight: 650; }
+#score { font-size: 28px; font-weight: 800; color: #ff6b35; }
+#combo { font-size: 16px; color: #666; height: 22px; }
+button {
+  margin-top: 6px;
+  padding: 8px 22px;
+  background: #ff6b35;
+  color: white;
+  border: none;
+  border-radius: 24px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.tip { font-size: 12px; color: #777; margin-top: 4px; max-width: 320px; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>送外卖</h2>
+  <div>送达 <span id="score">0</span></div>
+  <div id="combo"></div>
+  <button onclick="restart()">再来一单</button>
+  <div class="tip">按住蓄力，松开把餐扔向顾客窗口。刚好落入中心有完美加分！</div>
+</div>
+<canvas id="game" width="380" height="540"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 380, H = 540;
+
+let player = { x: 70, y: 420, charging: false, charge: 0 };
+let orders = [];
+let flying = null;
+let score = 0;
+let combo = 0;
+let best = parseInt(localStorage.getItem('deliveryBest') || 0);
+let gameOver = false;
+let spawnTimer = 0;
+let speed = 1.2;
+let particles = [];
+let feedback = '';
+let feedbackTimer = 0;
+
+const foods = ['🍔', '🍕', '🍜', '🍱', '🌭', '🥗'];
+
+function spawnOrder() {
+  const food = foods[Math.floor(Math.random() * foods.length)];
+  orders.push({
+    x: W + 40,
+    y: 80 + Math.random() * 180,
+    w: 70,
+    h: 50,
+    food: food,
+    perfect: 18,
+    speed: speed + Math.random() * 0.4
+  });
+}
+
+function spawnParticles(x, y, color) {
+  for (let i = 0; i < 10; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 7,
+      vy: (Math.random() - 0.5) * 7 - 1,
+      life: 28,
+      color
+    });
+  }
+}
+
+function update() {
+  if (gameOver) return;
+
+  if (player.charging) {
+    player.charge = Math.min(player.charge + 1.1, 40);
+  }
+
+  orders.forEach(o => o.x -= o.speed);
+  orders = orders.filter(o => o.x > -80);
+
+  spawnTimer++;
+  if (spawnTimer > Math.max(50, 90 - score * 2)) {
+    spawnOrder();
+    spawnTimer = 0;
+  }
+  speed = 1.2 + score * 0.04;
+
+  if (flying) {
+    flying.x += flying.vx;
+    flying.y += flying.vy;
+    flying.vy += 0.18;
+
+    for (let i = orders.length - 1; i >= 0; i--) {
+      const o = orders[i];
+      if (flying.x > o.x && flying.x < o.x + o.w &&
+          flying.y > o.y && flying.y < o.y + o.h) {
+        const centerX = o.x + o.w / 2;
+        const dist = Math.abs(flying.x - centerX);
+        if (dist < o.perfect) {
+          combo++;
+          score += 12 + combo * 2;
+          feedback = '完美送达！';
+          spawnParticles(flying.x, flying.y, '#ff6b35');
+        } else {
+          combo++;
+          score += 5;
+          feedback = '送达';
+          spawnParticles(flying.x, flying.y, '#4ecdc4');
+        }
+        document.getElementById('score').textContent = score;
+        document.getElementById('combo').textContent = combo > 1 ? '连击 x' + combo : '';
+        if (score > best) {
+          best = score;
+          localStorage.setItem('deliveryBest', best);
+        }
+        feedbackTimer = 35;
+        orders.splice(i, 1);
+        flying = null;
+        break;
+      }
+    }
+
+    if (flying && (flying.y > H - 40 || flying.x > W + 50)) {
+      combo = 0;
+      document.getElementById('combo').textContent = '';
+      feedback = '没送到';
+      feedbackTimer = 30;
+      flying = null;
+      if (score > 8 && Math.random() > 0.7) gameOver = true;
+    }
+  }
+
+  orders.forEach(o => {
+    if (o.x < 40 && !o.missed) {
+      o.missed = true;
+      combo = 0;
+      document.getElementById('combo').textContent = '';
+    }
+  });
+
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.12;
+    p.life--;
+  });
+  particles = particles.filter(p => p.life > 0);
+  if (feedbackTimer > 0) feedbackTimer--;
+}
+
+function throwFood() {
+  if (flying || gameOver) return;
+  const power = 6 + player.charge * 0.22;
+  flying = {
+    x: player.x + 20,
+    y: player.y - 10,
+    vx: power * 0.85,
+    vy: -power * 0.55,
+    food: foods[Math.floor(Math.random() * foods.length)]
+  };
+  player.charging = false;
+  player.charge = 0;
+}
+
+function draw() {
+  ctx.fillStyle = '#f0f4f8';
+  ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = '#dfe6e9';
+  ctx.fillRect(0, 360, W, 180);
+  ctx.strokeStyle = '#b2bec3';
+  ctx.setLineDash([15, 15]);
+  ctx.beginPath();
+  ctx.moveTo(0, 450);
+  ctx.lineTo(W, 450);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  orders.forEach(o => {
+    ctx.fillStyle = '#74b9ff';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.fillStyle = '#fff';
+    ctx.font = '24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(o.food, o.x + o.w / 2, o.y + 32);
+    ctx.fillStyle = 'rgba(255,107,53,0.25)';
+    ctx.fillRect(o.x + o.w/2 - o.perfect, o.y + o.h - 8, o.perfect * 2, 6);
+  });
+
+  ctx.fillStyle = '#ff6b35';
+  ctx.beginPath();
+  ctx.arc(player.x, player.y, 18, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.font = '16px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🛵', player.x, player.y + 6);
+
+  if (player.charging) {
+    ctx.fillStyle = '#ffeaa7';
+    ctx.fillRect(player.x - 20, player.y - 35, player.charge * 1.2, 6);
+    ctx.strokeStyle = '#ff6b35';
+    ctx.strokeRect(player.x - 20, player.y - 35, 48, 6);
+  }
+
+  if (flying) {
+    ctx.font = '28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(flying.food, flying.x, flying.y);
+  }
+
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / 28;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  if (feedbackTimer > 0) {
+    ctx.fillStyle = '#ff6b35';
+    ctx.font = 'bold 22px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(feedback, W/2, 80);
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.fillRect(60, 200, 260, 120);
+    ctx.fillStyle = '#ff6b35';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('本单结束', W/2, 245);
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#555';
+    ctx.fillText('送达 ' + score + ' 单', W/2, 280);
+  }
+}
+
+let pressing = false;
+canvas.addEventListener('mousedown', () => { pressing = true; if (!flying) player.charging = true; });
+canvas.addEventListener('mouseup', () => { if (pressing && player.charging) throwFood(); pressing = false; });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  pressing = true;
+  if (!flying) player.charging = true;
+}, {passive: false});
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (pressing && player.charging) throwFood();
+  pressing = false;
+});
+
+function restart() {
+  player = { x: 70, y: 420, charging: false, charge: 0 };
+  orders = [];
+  flying = null;
+  score = 0;
+  combo = 0;
+  gameOver = false;
+  spawnTimer = 0;
+  speed = 1.2;
+  particles = [];
+  feedback = '';
+  feedbackTimer = 0;
+  document.getElementById('score').textContent = 0;
+  document.getElementById('combo').textContent = '';
+  spawnOrder();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+restart();
+loop();
+</script>
+</body>
+</html>
