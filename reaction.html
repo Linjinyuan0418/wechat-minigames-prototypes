@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>一键反应 · 节奏精准</title>
+<style>
+body { margin:0; background:#0a0a0a; display:flex; flex-direction:column; align-items:center; font-family:sans-serif; color:#fff; }
+canvas { border:2px solid #00ff88; background:#111; margin-top:10px; cursor:pointer; }
+.ui { margin:10px; text-align:center; }
+button { padding:10px 20px; background:#00ff88; color:#000; border:none; border-radius:8px; font-weight:bold; }
+#score { font-size:28px; color:#00ff88; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>⚡ 节奏精准</h2>
+  <div>连击: <span id="score">0</span> | 最高: <span id="best">0</span></div>
+  <button onclick="restart()">重新开始</button>
+  <p>在目标变成绿色时点击！速度越来越快～</p>
+</div>
+<canvas id="game" width="400" height="500"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let targets = [];
+let combo = 0;
+let best = localStorage.getItem('reactBest') || 0;
+let gameOver = false;
+let spawnTimer = 0;
+let speed = 60;
+
+function spawnTarget() {
+  targets.push({
+    x: 50 + Math.random()*300,
+    y: 80 + Math.random()*300,
+    r: 35,
+    timer: 0,
+    maxTime: 80 + Math.random()*40,
+    color: '#ff3366',
+    good: false
+  });
+}
+
+function update() {
+  if (gameOver) return;
+  spawnTimer++;
+  if (spawnTimer > speed) {
+    spawnTarget();
+    spawnTimer = 0;
+    speed = Math.max(25, speed - 0.5);
+  }
+
+  for (let t of targets) {
+    t.timer++;
+    if (t.timer > t.maxTime * 0.6 && t.timer < t.maxTime * 0.85) {
+      t.color = '#00ff88';
+      t.good = true;
+    } else if (t.timer > t.maxTime * 0.85) {
+      t.color = '#ffaa00';
+    }
+    if (t.timer > t.maxTime + 20) {
+      // Miss
+      combo = 0;
+      document.getElementById('score').textContent = 0;
+      if (Math.random() > 0.6) gameOver = true;
+    }
+  }
+  targets = targets.filter(t => t.timer < t.maxTime + 40);
+}
+
+function draw() {
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0,0,400,500);
+
+  for (let t of targets) {
+    ctx.fillStyle = t.color;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.r, 0, Math.PI*2);
+    ctx.fill();
+    // Progress ring
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(t.x, t.y, t.r+5, -Math.PI/2, -Math.PI/2 + (t.timer/t.maxTime)*Math.PI*2);
+    ctx.stroke();
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0,150,400,200);
+    ctx.fillStyle = '#00ff88';
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('断了！', 200, 230);
+    ctx.font = '20px sans-serif';
+    ctx.fillText('最高连击 ' + best, 200, 280);
+  }
+}
+
+canvas.addEventListener('click', e => {
+  if (gameOver) return;
+  const rect = canvas.getBoundingClientRect();
+  const mx = e.clientX - rect.left;
+  const my = e.clientY - rect.top;
+
+  for (let i = targets.length-1; i >= 0; i--) {
+    const t = targets[i];
+    const dist = Math.hypot(mx - t.x, my - t.y);
+    if (dist < t.r + 10) {
+      if (t.good) {
+        combo++;
+        if (combo > best) {
+          best = combo;
+          localStorage.setItem('reactBest', best);
+          document.getElementById('best').textContent = best;
+        }
+        document.getElementById('score').textContent = combo;
+      } else {
+        combo = Math.max(0, combo - 2);
+        document.getElementById('score').textContent = combo;
+      }
+      targets.splice(i, 1);
+      break;
+    }
+  }
+});
+
+function restart() {
+  targets = [];
+  combo = 0;
+  gameOver = false;
+  spawnTimer = 0;
+  speed = 60;
+  document.getElementById('score').textContent = 0;
+  spawnTarget();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('best').textContent = best;
+restart();
+loop();
+</script>
+</body>
+</html>

@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>合成物理混搭</title>
+<style>
+body { margin:0; background:#2d1b69; display:flex; flex-direction:column; align-items:center; font-family:sans-serif; color:#fff; }
+canvas { border:2px solid #ffd93d; background:#1a1a2e; margin-top:10px; touch-action:none; }
+.ui { margin:10px; text-align:center; }
+button { padding:10px 20px; background:#ff6b6b; color:white; border:none; border-radius:8px; }
+#score { font-size:22px; color:#ffd93d; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>🍉 合成物理</h2>
+  <div>最高合成: <span id="score">1</span> | 分数: <span id="points">0</span></div>
+  <button onclick="restart()">重新开始</button>
+  <p>点击放置水果，相同水果碰触会合并升级！</p>
+</div>
+<canvas id="game" width="400" height="600"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let fruits = [];
+let nextLevel = 1;
+let points = 0;
+let maxLevel = 1;
+let gameOver = false;
+const levels = [
+  {r:20, color:'#ff6b6b', name:'樱桃'},
+  {r:28, color:'#ff9f1c', name:'橘子'},
+  {r:36, color:'#ffe66d', name:'柠檬'},
+  {r:45, color:'#4ecdc4', name:'西瓜'},
+  {r:55, color:'#c44536', name:'大西瓜'},
+  {r:65, color:'#ffd93d', name:'超级西瓜'}
+];
+
+function spawnFruit(x) {
+  const lv = nextLevel - 1;
+  fruits.push({
+    x: x, y: 40, r: levels[lv].r, level: nextLevel,
+    vx:0, vy:0, color: levels[lv].color, merged:false
+  });
+  nextLevel = Math.min(6, Math.floor(Math.random()*3)+1);
+}
+
+function update() {
+  if (gameOver) return;
+  for (let f of fruits) {
+    f.vy += 0.35;
+    f.x += f.vx;
+    f.y += f.vy;
+    f.vx *= 0.98;
+
+    // Bounds
+    if (f.x - f.r < 10) { f.x = 10 + f.r; f.vx *= -0.5; }
+    if (f.x + f.r > 390) { f.x = 390 - f.r; f.vx *= -0.5; }
+    if (f.y + f.r > 560) { f.y = 560 - f.r; f.vy *= -0.4; }
+  }
+
+  // Merge
+  for (let i = 0; i < fruits.length; i++) {
+    for (let j = i+1; j < fruits.length; j++) {
+      const a = fruits[i], b = fruits[j];
+      if (a.merged || b.merged) continue;
+      const dx = a.x - b.x, dy = a.y - b.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist < a.r + b.r - 5 && a.level === b.level && a.level < 6) {
+        a.merged = true; b.merged = true;
+        const newLv = a.level + 1;
+        fruits.push({
+          x: (a.x+b.x)/2, y: (a.y+b.y)/2,
+          r: levels[newLv-1].r, level: newLv,
+          vx:(a.vx+b.vx)/2, vy:-3,
+          color: levels[newLv-1].color, merged:false
+        });
+        points += newLv * 10;
+        maxLevel = Math.max(maxLevel, newLv);
+        document.getElementById('score').textContent = maxLevel;
+        document.getElementById('points').textContent = points;
+      }
+    }
+  }
+  fruits = fruits.filter(f => !f.merged);
+
+  // Game over
+  if (fruits.some(f => f.y < 80 && f.vy > -1 && f.y > 60)) gameOver = true;
+}
+
+function draw() {
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0,0,400,600);
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(0,560,400,40);
+
+  for (let f of fruits) {
+    ctx.fillStyle = f.color;
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, f.r, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = '#000';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.level, f.x, f.y+4);
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0,200,400,200);
+    ctx.fillStyle = '#fff';
+    ctx.font = '28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('溢出了！', 200, 280);
+    ctx.font = '18px sans-serif';
+    ctx.fillText('最高 Lv.' + maxLevel, 200, 320);
+  }
+}
+
+canvas.addEventListener('click', e => {
+  if (gameOver) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  if (x > 30 && x < 370) spawnFruit(x);
+});
+
+function restart() {
+  fruits = [];
+  nextLevel = 1;
+  points = 0;
+  maxLevel = 1;
+  gameOver = false;
+  document.getElementById('score').textContent = 1;
+  document.getElementById('points').textContent = 0;
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+restart();
+loop();
+</script>
+</body>
+</html>
