@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>刚好充满 · 一键时机</title>
+<style>
+body {
+  margin: 0;
+  background: linear-gradient(160deg, #ffecd2 0%, #fcb69f 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #333;
+  min-height: 100vh;
+}
+canvas {
+  border-radius: 20px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+  background: #fff;
+  margin-top: 10px;
+  touch-action: none;
+}
+.ui { margin: 14px; text-align: center; }
+h2 { margin: 0 0 4px; color: #ff7b54; font-weight: 650; }
+#score { font-size: 32px; font-weight: 800; color: #ff7b54; }
+#combo { font-size: 18px; color: #666; height: 24px; }
+button {
+  margin-top: 6px;
+  padding: 10px 28px;
+  background: #ff7b54;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.tip { font-size: 13px; color: #777; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>刚好充满</h2>
+  <div>分数 <span id="score">0</span></div>
+  <div id="combo"></div>
+  <button onclick="restart()">再来一局</button>
+  <div class="tip">按住充气，松开锁定。刚好充满圆框得高分！</div>
+</div>
+<canvas id="game" width="360" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 360, H = 500;
+
+let score = 0;
+let combo = 0;
+let best = parseInt(localStorage.getItem('fillBest') || 0);
+let gameOver = false;
+let charging = false;
+let currentSize = 20;
+let targetSize = 80;
+let targetPulse = 0;
+let round = 0;
+let feedback = '';
+let feedbackTimer = 0;
+let particles = [];
+
+function newTarget() {
+  targetSize = 60 + Math.random() * 90;
+  currentSize = 18;
+  charging = false;
+  round++;
+}
+
+function spawnParticles(x, y, color, count = 12) {
+  for (let i = 0; i < count; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random() - 0.5) * 8,
+      vy: (Math.random() - 0.5) * 8,
+      life: 25 + Math.random() * 15,
+      color
+    });
+  }
+}
+
+function update() {
+  if (gameOver) return;
+
+  if (charging) {
+    currentSize += 1.6 + round * 0.08;
+    if (currentSize > 200) {
+      endRound(false);
+    }
+  }
+
+  targetPulse += 0.08;
+
+  particles.forEach(p => {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life--;
+  });
+  particles = particles.filter(p => p.life > 0);
+
+  if (feedbackTimer > 0) feedbackTimer--;
+}
+
+function endRound(success) {
+  const diff = Math.abs(currentSize - targetSize);
+  const perfect = diff < 8;
+  const good = diff < 18;
+
+  if (perfect) {
+    combo++;
+    score += 20 + combo * 3;
+    feedback = '完美！';
+    spawnParticles(W/2, H/2 - 20, '#ff7b54', 16);
+  } else if (good) {
+    combo++;
+    score += 8;
+    feedback = '不错';
+    spawnParticles(W/2, H/2 - 20, '#ffb347', 8);
+  } else {
+    combo = 0;
+    score += 2;
+    feedback = '差太多';
+  }
+
+  document.getElementById('score').textContent = score;
+  document.getElementById('combo').textContent = combo > 1 ? '连击 x' + combo : '';
+  if (score > best) {
+    best = score;
+    localStorage.setItem('fillBest', best);
+  }
+
+  feedbackTimer = 40;
+
+  if (!good && Math.random() > 0.6 && round > 5) {
+    gameOver = true;
+    return;
+  }
+
+  setTimeout(() => {
+    if (!gameOver) newTarget();
+  }, 500);
+}
+
+function draw() {
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#fff8f0');
+  g.addColorStop(1, '#ffe8dc');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  const cx = W / 2;
+  const cy = H / 2 - 10;
+
+  ctx.strokeStyle = '#ff7b54';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, targetSize, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = 'rgba(255,123,84,0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, targetSize + Math.sin(targetPulse) * 4, 0, Math.PI * 2);
+  ctx.stroke();
+
+  const balloonColor = charging ? '#ff9a76' : '#ff7b54';
+  ctx.fillStyle = balloonColor;
+  ctx.beginPath();
+  ctx.arc(cx, cy, currentSize, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.45)';
+  ctx.beginPath();
+  ctx.arc(cx - currentSize * 0.3, cy - currentSize * 0.3, currentSize * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy + currentSize);
+  ctx.lineTo(cx, cy + currentSize + 30);
+  ctx.stroke();
+
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / 30;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  if (feedbackTimer > 0) {
+    ctx.fillStyle = '#ff7b54';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(feedback, cx, cy - targetSize - 30);
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillRect(50, 180, 260, 130);
+    ctx.fillStyle = '#ff7b54';
+    ctx.font = 'bold 24px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('结束啦', W/2, 230);
+    ctx.font = '16px sans-serif';
+    ctx.fillStyle = '#555';
+    ctx.fillText('分数 ' + score, W/2, 265);
+  }
+}
+
+canvas.addEventListener('mousedown', () => { if (!gameOver) charging = true; });
+canvas.addEventListener('mouseup', () => { if (charging) { charging = false; endRound(true); } });
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (!gameOver) charging = true;
+}, {passive: false});
+canvas.addEventListener('touchend', e => {
+  e.preventDefault();
+  if (charging) { charging = false; endRound(true); }
+});
+
+function restart() {
+  score = 0;
+  combo = 0;
+  gameOver = false;
+  round = 0;
+  feedback = '';
+  feedbackTimer = 0;
+  particles = [];
+  document.getElementById('score').textContent = 0;
+  document.getElementById('combo').textContent = '';
+  newTarget();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+restart();
+loop();
+</script>
+</body>
+</html>
