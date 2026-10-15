@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>快速分类归位 · 原型</title>
+<style>
+body { margin:0; background:#1a1a2e; display:flex; flex-direction:column; align-items:center; font-family:sans-serif; color:#fff; overflow:hidden; }
+canvas { border:2px solid #ffd93d; background:#0f3460; margin-top:5px; touch-action:none; }
+.ui { margin:8px; text-align:center; }
+button { padding:8px 16px; margin:4px; background:#e94560; color:white; border:none; border-radius:8px; font-size:15px; }
+#score { font-size:22px; font-weight:bold; color:#ffd93d; }
+#combo { font-size:18px; color:#4ecdc4; }
+.info { font-size:13px; color:#aaa; max-width:400px; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>🗂️ 快速分类归位</h2>
+  <div>分数: <span id="score">0</span> | 连击: <span id="combo">0</span> | 最高: <span id="best">0</span></div>
+  <button onclick="restart()">重新开始</button>
+  <div class="info">物品掉落时点击对应分类桶！正确加分连击，错误断连击。速度会越来越快～</div>
+</div>
+<canvas id="game" width="420" height="620"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 420, H = 620;
+
+let items = [];
+let score = 0;
+let combo = 0;
+let best = parseInt(localStorage.getItem('sortBest') || 0);
+let gameOver = false;
+let spawnTimer = 0;
+let baseSpeed = 1.8;
+let time = 0;
+let specialChance = 0.12;
+
+// Categories
+const categories = [
+  { id: 0, name: '可回收', color: '#4ecdc4', emoji: '♻️' },
+  { id: 1, name: '厨余', color: '#ffe66d', emoji: '🍎' },
+  { id: 2, name: '其他', color: '#ff6b6b', emoji: '🗑️' }
+];
+
+const itemTypes = [
+  { cat: 0, name: '塑料瓶', emoji: '🧴', color: '#4ecdc4' },
+  { cat: 0, name: '纸箱', emoji: '📦', color: '#a8dadc' },
+  { cat: 0, name: '易拉罐', emoji: '🥫', color: '#457b9d' },
+  { cat: 1, name: '苹果核', emoji: '🍎', color: '#ffe66d' },
+  { cat: 1, name: '菜叶', emoji: '🥬', color: '#80ed99' },
+  { cat: 1, name: '香蕉皮', emoji: '🍌', color: '#f4a261' },
+  { cat: 2, name: '纸巾', emoji: '🧻', color: '#ff6b6b' },
+  { cat: 2, name: '陶瓷', emoji: '🏺', color: '#e76f51' },
+  { cat: 2, name: '烟头', emoji: '🚬', color: '#6d6875' }
+];
+
+const specials = [
+  { type: 'gold', name: '金色', emoji: '✨', color: '#ffd93d', bonus: true },
+  { type: 'bomb', name: '炸弹', emoji: '💣', color: '#ff006e', bad: true }
+];
+
+function spawnItem() {
+  const isSpecial = Math.random() < specialChance;
+  let def;
+  if (isSpecial) {
+    def = specials[Math.floor(Math.random() * specials.length)];
+    def.cat = -1;
+  } else {
+    def = itemTypes[Math.floor(Math.random() * itemTypes.length)];
+  }
+  items.push({
+    x: 60 + Math.random() * 300,
+    y: -40,
+    vy: baseSpeed + Math.random() * 0.8,
+    size: 42,
+    def: def,
+    caught: false
+  });
+}
+
+function update() {
+  if (gameOver) return;
+  time++;
+  spawnTimer++;
+
+  const spawnInterval = Math.max(28, 70 - Math.floor(time / 400));
+  if (spawnTimer > spawnInterval) {
+    spawnItem();
+    spawnTimer = 0;
+    if (Math.random() < 0.3) spawnItem();
+  }
+
+  baseSpeed = 1.8 + time * 0.0012;
+
+  for (let it of items) {
+    it.y += it.vy;
+    if (it.y > H - 80 && !it.caught) {
+      miss();
+      it.caught = true;
+    }
+  }
+  items = items.filter(it => !it.caught && it.y < H + 50);
+
+  document.getElementById('score').textContent = score;
+  document.getElementById('combo').textContent = combo;
+  if (score > best) {
+    best = score;
+    localStorage.setItem('sortBest', best);
+    document.getElementById('best').textContent = best;
+  }
+}
+
+function miss() {
+  combo = 0;
+  if (Math.random() > 0.75 && score > 50) {
+    gameOver = true;
+  }
+}
+
+function checkSort(item, bucketId) {
+  if (item.caught) return;
+  item.caught = true;
+
+  const def = item.def;
+  if (def.type === 'bomb') {
+    combo = 0;
+    score = Math.max(0, score - 30);
+    return;
+  }
+  if (def.type === 'gold') {
+    combo++;
+    score += 20 + combo * 2;
+    return;
+  }
+
+  if (def.cat === bucketId) {
+    combo++;
+    let add = 10 + Math.floor(combo / 5) * 2;
+    score += add;
+  } else {
+    combo = 0;
+    score = Math.max(0, score - 5);
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(0, 0, W, H);
+
+  for (let it of items) {
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(it.def.emoji, it.x, it.y);
+    ctx.font = '12px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(it.def.name || '', it.x, it.y + 22);
+  }
+
+  const bucketW = W / categories.length;
+  categories.forEach((cat, i) => {
+    const bx = i * bucketW;
+    ctx.fillStyle = cat.color;
+    ctx.globalAlpha = 0.85;
+    ctx.fillRect(bx + 4, H - 70, bucketW - 8, 60);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(cat.emoji + ' ' + cat.name, bx + bucketW / 2, H - 40);
+  });
+
+  if (combo > 5) {
+    ctx.fillStyle = '#ffd93d';
+    ctx.font = 'bold 20px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('连击 x' + combo, 10, 30);
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(0, 180, W, 220);
+    ctx.fillStyle = '#fff';
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('归类失败！', W/2, 260);
+    ctx.font = '20px sans-serif';
+    ctx.fillText('分数 ' + score, W/2, 310);
+    ctx.font = '16px sans-serif';
+    ctx.fillText('点击重新开始再冲一次', W/2, 350);
+  }
+}
+
+function handleInput(x, y) {
+  if (gameOver) return;
+  if (y < H - 90) return;
+
+  const bucketW = W / categories.length;
+  const bucketId = Math.floor(x / bucketW);
+  if (bucketId < 0 || bucketId >= categories.length) return;
+
+  let target = null;
+  let lowestY = -999;
+  for (let it of items) {
+    if (!it.caught && it.y > lowestY && it.y > 50) {
+      lowestY = it.y;
+      target = it;
+    }
+  }
+  if (target) {
+    checkSort(target, bucketId);
+  }
+}
+
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  handleInput(e.clientX - rect.left, e.clientY - rect.top);
+});
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const t = e.touches[0];
+  handleInput(t.clientX - rect.left, t.clientY - rect.top);
+}, {passive: false});
+
+function restart() {
+  items = [];
+  score = 0;
+  combo = 0;
+  gameOver = false;
+  spawnTimer = 0;
+  baseSpeed = 1.8;
+  time = 0;
+  document.getElementById('score').textContent = 0;
+  document.getElementById('combo').textContent = 0;
+  for (let i = 0; i < 2; i++) setTimeout(spawnItem, i * 400);
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('best').textContent = best;
+restart();
+loop();
+</script>
+</body>
+</html>
