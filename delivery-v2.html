@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>送外卖 · 改良版</title>
+<style>
+body {
+  margin: 0;
+  background: linear-gradient(180deg, #fff5e6 0%, #ffe0b2 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #333;
+  min-height: 100vh;
+}
+canvas {
+  border-radius: 18px;
+  box-shadow: 0 10px 36px rgba(0,0,0,0.1);
+  background: #fff;
+  margin-top: 8px;
+  touch-action: none;
+  cursor: pointer;
+}
+.ui { margin: 12px; text-align: center; }
+h2 { margin: 0 0 4px; color: #e67e22; font-weight: 700; }
+#score { font-size: 30px; font-weight: 800; color: #e67e22; }
+#combo { font-size: 16px; color: #7f8c8d; height: 22px; }
+button {
+  margin-top: 6px;
+  padding: 9px 24px;
+  background: #e67e22;
+  color: white;
+  border: none;
+  border-radius: 26px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.tip { font-size: 13px; color: #666; margin-top: 4px; max-width: 340px; line-height: 1.4; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>送外卖</h2>
+  <div>送达 <span id="score">0</span></div>
+  <div id="combo"></div>
+  <button onclick="restart()">再送一波</button>
+  <div class="tip">订单窗口移过来时，点击屏幕把餐扔出去。<br>刚好扔进中间金色区域就是完美送达！</div>
+</div>
+<canvas id="game" width="390" height="560"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 390, H = 560;
+
+let orders = [];
+let flyingFoods = [];
+let score = 0;
+let combo = 0;
+let best = parseInt(localStorage.getItem('delivery2Best') || 0);
+let gameOver = false;
+let spawnTimer = 0;
+let baseSpeed = 1.4;
+let particles = [];
+let floatTexts = [];
+
+const foods = ['🍔','🍕','🍜','🍱','🌮','🍣','🥗','🍟'];
+
+function spawnOrder() {
+  const laneY = [110, 190, 270][Math.floor(Math.random()*3)];
+  orders.push({
+    x: W + 60,
+    y: laneY,
+    w: 86,
+    h: 58,
+    food: foods[Math.floor(Math.random()*foods.length)],
+    speed: baseSpeed + Math.random()*0.5,
+    perfectZone: 22
+  });
+}
+
+function addFloat(text, x, y, color) {
+  floatTexts.push({ text, x, y, color, life: 50, vy: -1.2 });
+}
+
+function spawnParticles(x, y, color, n=10) {
+  for (let i=0;i<n;i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*8,
+      vy: (Math.random()-0.5)*8-1,
+      life: 30,
+      color
+    });
+  }
+}
+
+function update() {
+  if (gameOver) return;
+
+  orders.forEach(o => o.x -= o.speed);
+  orders = orders.filter(o => {
+    if (o.x < -100) {
+      combo = 0;
+      document.getElementById('combo').textContent = '';
+      addFloat('错过了', 60, o.y+20, '#e74c3c');
+      return false;
+    }
+    return true;
+  });
+
+  spawnTimer++;
+  const interval = Math.max(42, 85 - Math.floor(score/3));
+  if (spawnTimer > interval) {
+    spawnOrder();
+    spawnTimer = 0;
+    if (score > 15 && Math.random() < 0.35) spawnOrder();
+  }
+  baseSpeed = 1.4 + score * 0.035;
+
+  flyingFoods.forEach(f => {
+    f.x += f.vx;
+    f.y += f.vy;
+    f.vy += 0.12;
+  });
+
+  for (let i = flyingFoods.length-1; i>=0; i--) {
+    const f = flyingFoods[i];
+    let hit = false;
+    for (let j = orders.length-1; j>=0; j--) {
+      const o = orders[j];
+      if (f.x > o.x+10 && f.x < o.x+o.w-10 &&
+          f.y > o.y && f.y < o.y+o.h) {
+        const center = o.x + o.w/2;
+        const dist = Math.abs(f.x - center);
+        if (dist < o.perfectZone) {
+          combo++;
+          const add = 15 + combo*2;
+          score += add;
+          addFloat('完美 +'+add, f.x, f.y-10, '#e67e22');
+          spawnParticles(f.x, f.y, '#f39c12', 14);
+        } else {
+          combo++;
+          score += 6;
+          addFloat('+6', f.x, f.y-10, '#27ae60');
+          spawnParticles(f.x, f.y, '#2ecc71', 6);
+        }
+        document.getElementById('score').textContent = score;
+        document.getElementById('combo').textContent = combo>1 ? `连击 x${combo}` : '';
+        if (score > best) {
+          best = score;
+          localStorage.setItem('delivery2Best', best);
+        }
+        orders.splice(j,1);
+        hit = true;
+        break;
+      }
+    }
+    if (hit || f.y > H-30 || f.x > W+40) {
+      flyingFoods.splice(i,1);
+    }
+  }
+
+  particles.forEach(p => { p.x+=p.vx; p.y+=p.vy; p.life--; });
+  particles = particles.filter(p => p.life>0);
+  floatTexts.forEach(t => { t.y += t.vy; t.life--; });
+  floatTexts = floatTexts.filter(t => t.life>0);
+
+  const missedRecently = orders.some(o => o.x < 30);
+  if (missedRecently && score > 20 && Math.random() < 0.015) gameOver = true;
+}
+
+function throwAt(targetX, targetY) {
+  if (gameOver) return;
+  const startX = 50;
+  const startY = 480;
+  const dx = targetX - startX;
+  const dy = targetY - startY;
+  const dist = Math.hypot(dx, dy) || 1;
+  const power = 7.5;
+  flyingFoods.push({
+    x: startX,
+    y: startY,
+    vx: (dx / dist) * power,
+    vy: (dy / dist) * power * 0.65 - 2,
+    food: foods[Math.floor(Math.random()*foods.length)]
+  });
+}
+
+function draw() {
+  ctx.fillStyle = '#fafafa';
+  ctx.fillRect(0,0,W,H);
+  ctx.fillStyle = '#ecf0f1';
+  for (let i=0;i<5;i++) {
+    ctx.fillRect(i*90-20, 40, 70, 320);
+  }
+  ctx.fillStyle = '#bdc3c7';
+  ctx.fillRect(0, 430, W, 130);
+  ctx.strokeStyle = '#95a5a6';
+  ctx.setLineDash([12,18]);
+  ctx.beginPath();
+  ctx.moveTo(0, 495);
+  ctx.lineTo(W, 495);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = 'rgba(230,126,34,0.35)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([4,6]);
+  ctx.beginPath();
+  ctx.moveTo(140, 90);
+  ctx.lineTo(140, 360);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  orders.forEach(o => {
+    ctx.fillStyle = '#3498db';
+    ctx.fillRect(o.x, o.y, o.w, o.h);
+    ctx.strokeStyle = '#2980b9';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(o.x, o.y, o.w, o.h);
+    ctx.font = '26px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(o.food, o.x + o.w/2, o.y + 38);
+    ctx.fillStyle = 'rgba(243,156,18,0.55)';
+    ctx.fillRect(o.x + o.w/2 - o.perfectZone, o.y + o.h - 10, o.perfectZone*2, 8);
+  });
+
+  ctx.fillStyle = '#e67e22';
+  ctx.beginPath();
+  ctx.arc(50, 480, 20, 0, Math.PI*2);
+  ctx.fill();
+  ctx.font = '20px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🛵', 50, 487);
+
+  flyingFoods.forEach(f => {
+    ctx.font = '30px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(f.food, f.x, f.y);
+  });
+
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life/30;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  floatTexts.forEach(t => {
+    ctx.globalAlpha = t.life/50;
+    ctx.fillStyle = t.color;
+    ctx.font = 'bold 18px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(t.text, t.x, t.y);
+  });
+  ctx.globalAlpha = 1;
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(255,255,255,0.93)';
+    ctx.fillRect(55, 210, 280, 130);
+    ctx.fillStyle = '#e67e22';
+    ctx.font = 'bold 26px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('今天送到这', W/2, 255);
+    ctx.font = '17px sans-serif';
+    ctx.fillStyle = '#555';
+    ctx.fillText(`共送达 ${score} 单`, W/2, 295);
+  }
+}
+
+function handleThrow(clientX, clientY) {
+  if (gameOver) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+  let tx = x, ty = y;
+  let closest = null, minD = 120;
+  orders.forEach(o => {
+    const cx = o.x + o.w/2;
+    const cy = o.y + o.h/2;
+    const d = Math.hypot(x-cx, y-cy);
+    if (d < minD) { minD = d; closest = o; }
+  });
+  if (closest) {
+    tx = closest.x + closest.w/2;
+    ty = closest.y + closest.h/2;
+  }
+  throwAt(tx, ty);
+}
+
+canvas.addEventListener('click', e => handleThrow(e.clientX, e.clientY));
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0];
+  handleThrow(t.clientX, t.clientY);
+}, {passive:false});
+
+function restart() {
+  orders = [];
+  flyingFoods = [];
+  score = 0;
+  combo = 0;
+  gameOver = false;
+  spawnTimer = 30;
+  baseSpeed = 1.4;
+  particles = [];
+  floatTexts = [];
+  document.getElementById('score').textContent = '0';
+  document.getElementById('combo').textContent = '';
+  spawnOrder();
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+restart();
+loop();
+</script>
+</body>
+</html>
