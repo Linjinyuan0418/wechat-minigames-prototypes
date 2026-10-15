@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>送外卖 · 车道冲刺</title>
+<style>
+body {
+  margin: 0;
+  background: #1a1a2e;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #fff;
+  min-height: 100vh;
+}
+canvas {
+  border-radius: 12px;
+  margin-top: 8px;
+  touch-action: none;
+  background: #16213e;
+}
+.ui { margin: 10px; text-align: center; }
+h2 { margin: 0 0 4px; color: #ff9f1c; }
+#score { font-size: 26px; font-weight: bold; color: #ffd93d; }
+#info { font-size: 14px; color: #a8dadc; height: 20px; }
+button {
+  margin-top: 6px;
+  padding: 8px 20px;
+  background: #e94560;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-size: 15px;
+}
+.tip { font-size: 12px; color: #ccc; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>送外卖 · 冲刺</h2>
+  <div>分数 <span id="score">0</span></div>
+  <div id="info">携带 0 单</div>
+  <button onclick="restart()">重新出发</button>
+  <div class="tip">左右滑动换道 · 捡订单 · 送到金色顾客处 · 躲开障碍</div>
+</div>
+<canvas id="game" width="360" height="580"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = 360, H = 580;
+const LANES = [70, 180, 290];
+
+let player = { lane: 1, y: 460, carrying: 0 };
+let items = [];
+let score = 0;
+let best = parseInt(localStorage.getItem('dashBest') || 0);
+let gameOver = false;
+let speed = 3.5;
+let spawnTimer = 0;
+let distance = 0;
+let particles = [];
+
+const foods = ['🍔','🍕','🍜','🍱','🌮'];
+
+function spawn() {
+  const lane = Math.floor(Math.random() * 3);
+  const r = Math.random();
+  if (r < 0.45) {
+    items.push({ type: 'order', lane, y: -40, food: foods[Math.floor(Math.random()*foods.length)] });
+  } else if (r < 0.75) {
+    items.push({ type: 'obstacle', lane, y: -40 });
+  } else {
+    items.push({ type: 'customer', lane, y: -50 });
+  }
+}
+
+function update() {
+  if (gameOver) return;
+  distance += speed;
+  speed = 3.5 + distance * 0.0008;
+
+  spawnTimer++;
+  if (spawnTimer > Math.max(28, 55 - distance/800)) {
+    spawn();
+    spawnTimer = 0;
+  }
+
+  items.forEach(it => it.y += speed);
+
+  items = items.filter(it => {
+    if (Math.abs(it.y - player.y) < 35 && it.lane === player.lane) {
+      if (it.type === 'order') {
+        player.carrying++;
+        score += 2;
+        spawnParticles(LANES[it.lane], it.y, '#ffd93d');
+        document.getElementById('info').textContent = `携带 ${player.carrying} 单`;
+        return false;
+      }
+      if (it.type === 'customer' && player.carrying > 0) {
+        const add = 10 + player.carrying * 5;
+        score += add;
+        player.carrying = 0;
+        spawnParticles(LANES[it.lane], it.y, '#4ecdc4', 12);
+        document.getElementById('info').textContent = `送达！ +${add}`;
+        setTimeout(() => {
+          if (!gameOver) document.getElementById('info').textContent = `携带 ${player.carrying} 单`;
+        }, 800);
+        return false;
+      }
+      if (it.type === 'obstacle') {
+        gameOver = true;
+        return false;
+      }
+    }
+    return it.y < H + 60;
+  });
+
+  document.getElementById('score').textContent = score;
+  if (score > best) {
+    best = score;
+    localStorage.setItem('dashBest', best);
+  }
+
+  particles.forEach(p => { p.x += p.vx; p.y += p.vy; p.life--; });
+  particles = particles.filter(p => p.life > 0);
+}
+
+function spawnParticles(x, y, color, n=8) {
+  for (let i = 0; i < n; i++) {
+    particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*6,
+      vy: (Math.random()-0.5)*6,
+      life: 25,
+      color
+    });
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = '#1a1a2e';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([20, 20]);
+  [125, 235].forEach(x => {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, H);
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+
+  items.forEach(it => {
+    const x = LANES[it.lane];
+    if (it.type === 'order') {
+      ctx.font = '28px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(it.food, x, it.y);
+    } else if (it.type === 'obstacle') {
+      ctx.fillStyle = '#e94560';
+      ctx.fillRect(x-22, it.y-18, 44, 36);
+      ctx.fillStyle = '#fff';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🚧', x, it.y+6);
+    } else if (it.type === 'customer') {
+      ctx.fillStyle = '#ffd93d';
+      ctx.beginPath();
+      ctx.arc(x, it.y, 24, 0, Math.PI*2);
+      ctx.fill();
+      ctx.font = '20px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('🏠', x, it.y+7);
+    }
+  });
+
+  const px = LANES[player.lane];
+  ctx.fillStyle = '#ff9f1c';
+  ctx.beginPath();
+  ctx.arc(px, player.y, 22, 0, Math.PI*2);
+  ctx.fill();
+  ctx.font = '22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText('🛵', px, player.y+8);
+  if (player.carrying > 0) {
+    ctx.fillStyle = '#ffd93d';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.fillText(player.carrying, px, player.y-28);
+  }
+
+  particles.forEach(p => {
+    ctx.globalAlpha = p.life / 25;
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+    ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.75)';
+    ctx.fillRect(40, 200, 280, 150);
+    ctx.fillStyle = '#ffd93d';
+    ctx.font = 'bold 28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('撞到了！', W/2, 255);
+    ctx.font = '18px sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('分数 ' + score, W/2, 295);
+  }
+}
+
+let startX = 0;
+canvas.addEventListener('touchstart', e => {
+  startX = e.touches[0].clientX;
+}, {passive: true});
+canvas.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - startX;
+  if (dx > 40 && player.lane < 2) player.lane++;
+  if (dx < -40 && player.lane > 0) player.lane--;
+});
+canvas.addEventListener('click', e => {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  if (x < W/3) player.lane = 0;
+  else if (x < W*2/3) player.lane = 1;
+  else player.lane = 2;
+});
+
+function restart() {
+  player = { lane: 1, y: 460, carrying: 0 };
+  items = [];
+  score = 0;
+  gameOver = false;
+  speed = 3.5;
+  spawnTimer = 0;
+  distance = 0;
+  particles = [];
+  document.getElementById('score').textContent = '0';
+  document.getElementById('info').textContent = '携带 0 单';
+}
+
+function loop() {
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+restart();
+loop();
+</script>
+</body>
+</html>
