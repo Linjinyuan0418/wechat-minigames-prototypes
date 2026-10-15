@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>动态堆叠 · 火锅叠叠乐</title>
+<style>
+body { margin:0; background:#1a1a2e; display:flex; flex-direction:column; align-items:center; font-family:sans-serif; color:#fff; }
+canvas { border:2px solid #ff6b6b; background:#0f3460; margin-top:10px; touch-action:none; }
+.ui { margin:10px; text-align:center; }
+button { padding:10px 20px; margin:5px; background:#e94560; color:white; border:none; border-radius:8px; font-size:16px; }
+#score { font-size:24px; font-weight:bold; color:#ffd93d; }
+</style>
+</head>
+<body>
+<div class="ui">
+  <h2>🔥 火锅叠叠乐</h2>
+  <div>高度: <span id="score">0</span> 层 | 最高: <span id="best">0</span></div>
+  <button onclick="restart()">重新开始</button>
+  <p>左右滑动控制落点，叠得越高越好！小心晃动～</p>
+</div>
+<canvas id="game" width="400" height="600"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let items = [];
+let score = 0;
+let best = localStorage.getItem('stackBest') || 0;
+let currentItem = null;
+let gameOver = false;
+let wind = 0;
+let dropY = 50;
+
+const foods = [
+  {name:'豆腐', color:'#fff5e1', w:50, h:20, mass:1},
+  {name:'肉片', color:'#ff6b6b', w:60, h:15, mass:1.2},
+  {name:'丸子', color:'#c44536', w:40, h:40, mass:1.5},
+  {name:'菜叶', color:'#4ecdc4', w:70, h:12, mass:0.8},
+  {name:'鱼丸', color:'#ffe66d', w:45, h:35, mass:1.3}
+];
+
+function spawnItem() {
+  const f = foods[Math.floor(Math.random()*foods.length)];
+  currentItem = {
+    x: 200, y: dropY, w: f.w, h: f.h, vx:0, vy:0,
+    color: f.color, mass: f.mass, settled: false
+  };
+  wind = (Math.random()-0.5)*0.3;
+}
+
+function update() {
+  if (gameOver) return;
+  if (!currentItem) { spawnItem(); return; }
+
+  // Move with wind and gravity
+  currentItem.vx += wind * 0.05;
+  currentItem.vy += 0.4;
+  currentItem.x += currentItem.vx;
+  currentItem.y += currentItem.vy;
+
+  // Bounds
+  if (currentItem.x < 20) currentItem.x = 20;
+  if (currentItem.x + currentItem.w > 380) currentItem.x = 380 - currentItem.w;
+
+  // Collision with settled items
+  let hit = false;
+  for (let it of items) {
+    if (currentItem.y + currentItem.h > it.y &&
+        currentItem.x < it.x + it.w &&
+        currentItem.x + currentItem.w > it.x &&
+        currentItem.y < it.y + it.h) {
+      currentItem.y = it.y - currentItem.h;
+      currentItem.vy = 0;
+      currentItem.vx *= 0.3;
+      hit = true;
+      break;
+    }
+  }
+
+  // Ground
+  if (currentItem.y + currentItem.h > 550) {
+    currentItem.y = 550 - currentItem.h;
+    currentItem.vy = 0;
+    hit = true;
+  }
+
+  if (hit && Math.abs(currentItem.vy) < 1) {
+    currentItem.settled = true;
+    items.push(currentItem);
+    score = Math.max(score, Math.floor((550 - currentItem.y)/30));
+    document.getElementById('score').textContent = score;
+    if (score > best) {
+      best = score;
+      localStorage.setItem('stackBest', best);
+      document.getElementById('best').textContent = best;
+    }
+    currentItem = null;
+    // Shake if too high
+    if (score > 10) wind = (Math.random()-0.5)*1.5;
+  }
+
+  // Game over if too unstable
+  if (items.length > 3 && items[items.length-1].x < 30 || items[items.length-1].x > 320) {
+    if (Math.random() > 0.7) gameOver = true;
+  }
+}
+
+function draw() {
+  ctx.fillStyle = '#0f3460';
+  ctx.fillRect(0,0,400,600);
+
+  // Draw pot bottom
+  ctx.fillStyle = '#e94560';
+  ctx.fillRect(50, 550, 300, 30);
+  ctx.fillStyle = '#ffd93d';
+  ctx.fillRect(60, 545, 280, 10);
+
+  // Settled items
+  for (let it of items) {
+    ctx.fillStyle = it.color;
+    ctx.fillRect(it.x, it.y, it.w, it.h);
+    ctx.strokeStyle = '#333';
+    ctx.strokeRect(it.x, it.y, it.w, it.h);
+  }
+
+  // Current
+  if (currentItem) {
+    ctx.fillStyle = currentItem.color;
+    ctx.globalAlpha = 0.8;
+    ctx.fillRect(currentItem.x, currentItem.y, currentItem.w, currentItem.h);
+    ctx.globalAlpha = 1;
+  }
+
+  if (gameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.fillRect(0,200,400,200);
+    ctx.fillStyle = '#fff';
+    ctx.font = '32px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('叠倒了！', 200, 280);
+    ctx.font = '20px sans-serif';
+    ctx.fillText('最高 ' + score + ' 层', 200, 320);
+  }
+}
+
+let mouseX = 200;
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.touches[0].clientX - rect.left;
+}, {passive:false});
+
+function gameLoop() {
+  if (currentItem && !currentItem.settled) {
+    currentItem.x += (mouseX - currentItem.w/2 - currentItem.x) * 0.15;
+  }
+  update();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+function restart() {
+  items = [];
+  score = 0;
+  gameOver = false;
+  currentItem = null;
+  document.getElementById('score').textContent = 0;
+  spawnItem();
+}
+
+document.getElementById('best').textContent = best;
+restart();
+gameLoop();
+</script>
+</body>
+</html>
